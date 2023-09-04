@@ -8,6 +8,7 @@ use Typecho\Widget\Helper\Form\Element\Text;
 use Typecho\Widget\Helper\Form\Element\Radio;
 use Typecho\Widget\Helper\Form\Element\Select;
 use Typecho\Widget;
+use Typecho\Db;
 use Widget\Options;
 use Utils\Helper;
 
@@ -22,12 +23,12 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
 }
 /**
- *一个极简的邮件推送插件
+ *呆小萌的Typecho邮件推送插件修改版，适配多用户。
  *
  *@package Mailer
- *@author 呆小萌
- *@version 2.0
- *@link https://www.zhaoyingtian.com/archives/mailer.html
+ *@author HarryPan
+ *@version 1.0
+ *@link https://github.com/Harry-Pan/Mailer-for-Multi-User-Typecho
  */
 
 class Plugin implements PluginInterface
@@ -200,6 +201,22 @@ class Plugin implements PluginInterface
             $test = $time . " commentJson\n";
             file_put_contents($fileName, $test, FILE_APPEND);
         }
+        try {
+            $db = Db::get();
+        } catch (Db\Exception $e) {
+            if ($Mailer->log == 2) {
+                $time = date('Y-m-d H:i:s', time());
+                $fileName = dirname(__FILE__) . '/test.log';
+                $test = $time . " commentJson-exception:".$e->getMessage();
+                file_put_contents($fileName, $test, FILE_APPEND);
+            }
+        }
+        if ($Mailer->log == 2) {
+            $time = date('Y-m-d H:i:s', time());
+            $fileName = dirname(__FILE__) . '/test.log';
+            $test = $time . " commentJson2\n";
+            file_put_contents($fileName, $test, FILE_APPEND);
+        }
         $commentOjb = (object)NULL;
         $commentOjb->coid = $comment->coid;
         $commentOjb->cid = $comment->cid;
@@ -217,7 +234,33 @@ class Plugin implements PluginInterface
         $commentOjb->title = $comment->title;
         $commentOjb->permalink = $comment->permalink;
         $commentOjb->time = date('Y-m-d H:i:s', $comment->created);
+        if ($Mailer->log == 2) {
+            $time = date('Y-m-d H:i:s', time());
+            $fileName = dirname(__FILE__) . '/test.log';
+            $test = $time . " commentJson3\n";
+            file_put_contents($fileName, $test, FILE_APPEND);
+        }
+        $contentsTab =$db->getPrefix() . 'contents';
+        $usersTab =$db->getPrefix() . 'users';
+        $query='select mail
+                From `'.$usersTab.'` JOIN `'.$contentsTab.'`
+                 ON `'.$contentsTab.'`.authorId=`'.$usersTab.'`.uid
+                  where cid='.$comment->cid;
+        $result=$db->query($query)->fetch_array();
+        $commentOjb->authorMail=$result[0];
+        if ($Mailer->log == 2) {
+            $time = date('Y-m-d H:i:s', time());
+            $fileName = dirname(__FILE__) . '/test.log';
+            $test = $time . " commentJson4\n";
+            file_put_contents($fileName, $test, FILE_APPEND);
+        }
         $commentJson = json_encode($commentOjb);
+        if ($Mailer->log == 2) {
+            $time = date('Y-m-d H:i:s', time());
+            $fileName = dirname(__FILE__) . '/test.log';
+            $test = $time . " commentJson5\n".$commentJson;
+            file_put_contents($fileName, $test, FILE_APPEND);
+        }
         return $commentJson;
     }
     //评论事件发信
@@ -254,6 +297,11 @@ class Plugin implements PluginInterface
         } else {
             self::sendNotice($comment);
         }
+        //作者为站长或评论者或评论审核中
+        if($comment->authorMail == $adminMail || $usermail == $comment->authorMail || $comment->status=="waiting"){
+        }else{
+            self::sendNoticeForAuthor($comment);
+        }
     }
     //审核通过事件发信
     public static function SendMailApproved($commentJson)
@@ -288,6 +336,11 @@ class Plugin implements PluginInterface
                 self::sendReply($comment);
             }
         }
+        //作者为站长或评论者
+        if($comment->authorMail == $adminMail || $usermail == $comment->authorMail){
+        }else{
+            self::sendNoticeForAuthor($comment);
+        }
     }
     public static function sendReply($comment)
     {
@@ -316,6 +369,20 @@ class Plugin implements PluginInterface
         }
         $mail = self::Mail('notice', $comment);
         self::smtp('《' . $comment->title . '》有新的评论', $mail, $Mailer->adminMail, $options->title);
+    }
+    public static function sendNoticeForAuthor($comment)
+    {
+        $options = Options::alloc();
+        $Mailer = $options->plugin('Mailer');
+        //测试日志
+        if ($Mailer->log == 2) {
+            $time = date('Y-m-d H:i:s', time());
+            $fileName = dirname(__FILE__) . '/test.log';
+            $test = $time . " sendNoticeForAuthor:".$comment->authorMail."\n";
+            file_put_contents($fileName, $test, FILE_APPEND);
+        }
+        $mail = self::Mail('notice', $comment);
+        self::smtp('《' . $comment->title . '》有新的评论', $mail, $comment->authorMail, $options->title);
     }
     public static function sendApproved($comment)
     {
